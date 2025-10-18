@@ -1,0 +1,19 @@
+services:
+  file-server:
+    build: .
+    container_name: file_server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./share:/app/share
+    restart: unless-stopped
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: http_client
+    command: ["python", "-u", "client.py", "file-server", "8080", "/img.png", "/save"]
+    volumes:
+      - ./save:/save
+    depends_on:
+      - file-server
