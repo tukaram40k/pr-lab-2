@@ -11,6 +11,8 @@ BUFFER_SIZE = 1024
 
 # hit counter dict
 file_access_counts = {}
+# lock for syncing
+file_counter_lock = threading.Lock()
 
 def build_http_response(status_code, content_type=None, content=None):
     status_messages = {
@@ -32,12 +34,14 @@ def build_http_response(status_code, content_type=None, content=None):
         return status_line.encode() + headers.encode()
 
 def increment_file_counter(file_path):
-    if file_path in file_access_counts:
-        current_count = file_access_counts[file_path]
-        time.sleep(0.001)
-        file_access_counts[file_path] = current_count + 1
-    else:
-        file_access_counts[file_path] = 1
+    # use lock
+    with file_counter_lock:
+        if file_path in file_access_counts:
+            current_count = file_access_counts[file_path]
+            time.sleep(0.001)
+            file_access_counts[file_path] = current_count + 1
+        else:
+            file_access_counts[file_path] = 1
 
 def generate_directory_listing(dir_path, base_dir, request_path):
     """Generate an HTML page listing directory contents recursively with access counts."""
@@ -65,8 +69,9 @@ def generate_directory_listing(dir_path, base_dir, request_path):
         if os.path.isdir(full_path):
             href += '/'
 
-        # Get access count for this file/directory
-        access_count = file_access_counts.get(full_path, 0)
+        # use lock
+        with file_counter_lock:
+            access_count = file_access_counts.get(full_path, 0)
         
         html.append(f'<tr><td><a href="{href}">{display_name}</a></td><td>{file_type}</td><td>{access_count}</td></tr>')
 
