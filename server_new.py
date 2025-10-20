@@ -4,20 +4,29 @@ import socket
 import mimetypes
 import threading
 import time
+from collections import defaultdict, deque
 
 HOST = '0.0.0.0'
 PORT = 8080
 BUFFER_SIZE = 1024
+
+RATE_LIMIT_REQUESTS = 5
+RATE_LIMIT_WINDOW = 1
 
 # hit counter dict
 file_access_counts = {}
 # lock for syncing
 file_counter_lock = threading.Lock()
 
+# rate limiting data structures
+client_requests = defaultdict(deque)
+rate_limit_lock = threading.Lock()
+
 def build_http_response(status_code, content_type=None, content=None):
     status_messages = {
         200: "OK",
-        404: "Not Found"
+        404: "Not Found",
+        429: "Too Many Requests"
     }
     status_line = f"HTTP/1.1 {status_code} {status_messages[status_code]}\r\n"
 
@@ -32,6 +41,25 @@ def build_http_response(status_code, content_type=None, content=None):
         return status_line.encode() + headers.encode() + content
     else:
         return status_line.encode() + headers.encode()
+
+def is_rate_limited(client_ip):
+    """Check if client has exceeded rate limit in a thread-safe manner"""
+    now = time.time()
+    
+    with rate_limit_lock:
+        # Clean old requests outside the time window
+        while (client_requests[client_ip] and 
+               client_requests[client_ip][0] < now - RATE_LIMIT_WINDOW):
+            client_requests[client_ip].popleft()
+        
+        # Check if over limit
+        if len(client_requests[client_ip]) >= RATE_LIMIT_REQUESTS:
+            return True
+        
+        # Add current request timestamp
+        client_requests[client_ip].append(now)
+        
+        return False
 
 def increment_file_counter(file_path):
     # use lock
@@ -79,6 +107,16 @@ def generate_directory_listing(dir_path, base_dir, request_path):
     return "\n".join(html).encode("utf-8")
 
 def handle_request(conn, base_dir):
+    client_ip = conn.getpeername()[0]
+    
+    # Check rate limit before processing
+    if is_rate_limited(client_ip):
+        response = build_http_response(429)
+        conn.sendall(response)
+        conn.close()
+        print(f"Rate limit exceeded for {client_ip}")
+        return
+
     time.sleep(1)
 
     try:

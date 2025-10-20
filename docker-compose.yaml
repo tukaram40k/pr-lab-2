@@ -7,13 +7,20 @@ services:
     volumes:
       - ./share:/app/share
     restart: unless-stopped
+    networks:
+      - internal_net
+
   client:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: http_client
-    command: ["python", "-u", "client.py", "file-server", "8080", "/img.png", "/save"]
-    volumes:
-      - ./save:/save
+    command: ["python", "-u", "client_new.py"]
     depends_on:
       - file-server
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    driver: bridge

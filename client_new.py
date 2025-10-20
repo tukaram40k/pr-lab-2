@@ -2,9 +2,9 @@ import threading
 import socket
 import time
 
-HOST = '127.0.0.1'
+HOST = 'file-server'
 PORT = 8080
-REQUESTS = 10
+REQUESTS = 15
 
 def send_request():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
