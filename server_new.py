@@ -9,6 +9,9 @@ HOST = '0.0.0.0'
 PORT = 8080
 BUFFER_SIZE = 1024
 
+# hit counter dict
+file_access_counts = {}
+
 def build_http_response(status_code, content_type=None, content=None):
     status_messages = {
         200: "OK",
@@ -28,32 +31,46 @@ def build_http_response(status_code, content_type=None, content=None):
     else:
         return status_line.encode() + headers.encode()
 
+def increment_file_counter(file_path):
+    if file_path in file_access_counts:
+        current_count = file_access_counts[file_path]
+        time.sleep(0.001)
+        file_access_counts[file_path] = current_count + 1
+    else:
+        file_access_counts[file_path] = 1
+
 def generate_directory_listing(dir_path, base_dir, request_path):
-    """Generate an HTML page listing directory contents recursively."""
+    """Generate an HTML page listing directory contents recursively with access counts."""
     entries = os.listdir(dir_path)
     entries.sort()
 
     html = ["<html><body>"]
-    html.append(f"<h2>Directory listing for {request_path}</h2><ul>")
+    html.append(f"<h2>Directory listing for {request_path}</h2>")
+    html.append("<table border='1' style='border-collapse: collapse;'>")
+    html.append("<tr><th>Name</th><th>Type</th><th>Times Served</th></tr>")
 
     parent_path = os.path.dirname(request_path.rstrip('/'))
     if not parent_path:
         parent_path = '/'
     if not parent_path.endswith('/'):
         parent_path += '/'
-    html.append(f'<li><a href="{parent_path}">../</a></li>')
+    html.append(f'<tr><td><a href="{parent_path}">../</a></td><td>Directory</td><td>-</td></tr>')
 
     for name in entries:
         full_path = os.path.join(dir_path, name)
         display_name = name + '/' if os.path.isdir(full_path) else name
+        file_type = "Directory" if os.path.isdir(full_path) else "File"
 
         href = (request_path.rstrip('/') + '/' + name).replace('\\', '/')
         if os.path.isdir(full_path):
             href += '/'
 
-        html.append(f'<li><a href="{href}">{display_name}</a></li>')
+        # Get access count for this file/directory
+        access_count = file_access_counts.get(full_path, 0)
+        
+        html.append(f'<tr><td><a href="{href}">{display_name}</a></td><td>{file_type}</td><td>{access_count}</td></tr>')
 
-    html.append("</ul></body></html>")
+    html.append("</table></body></html>")
     return "\n".join(html).encode("utf-8")
 
 def handle_request(conn, base_dir):
@@ -100,9 +117,16 @@ def handle_request(conn, base_dir):
 
         content_type, _ = mimetypes.guess_type(safe_path)
         if content_type not in ["text/html", "image/png", "application/pdf"]:
-            response = build_http_response(404)
+            increment_file_counter(safe_path)
+
+            with open(safe_path, 'rb') as f:
+                content = f.read()
+
+            response = build_http_response(200, "text/html", content)
             conn.sendall(response)
             return
+
+        increment_file_counter(safe_path)
 
         with open(safe_path, 'rb') as f:
             content = f.read()
